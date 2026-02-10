@@ -88,6 +88,10 @@ npm run test:integration # integration (реальный Dexscreener API)
 npm run test:all         # всё вместе
 ```
 
+## Диалог
+
+В репозитории сохранён диалог с нейросетью по разработке/правкам проекта: `Dialog.md`.
+
 ## Структура проекта
 
 ```
