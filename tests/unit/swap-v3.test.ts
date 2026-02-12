@@ -51,8 +51,8 @@ function makePool(): SelectedPool {
     },
     routerAddress: '0x13f4EA83D0bd40E75C8222255bc855a974568Dd4',
     version: 'v3',
-    tokenIn: WBNB,
-    tokenOut: '0xCAKE',
+    sellTokenAddress: WBNB,
+    buyTokenAddress: '0xCAKE',
     fee: 2500,
   };
 }
@@ -71,6 +71,7 @@ describe('swapV3', () => {
       BigInt('1000000000000000'),
       300000,
       20,
+      true,
     );
     expect(hash).toBe('0xV3HASH');
     expect(mockMulticall).toHaveBeenCalledTimes(1);
@@ -84,6 +85,7 @@ describe('swapV3', () => {
       BigInt('1000000000000000'),
       300000,
       20,
+      true,
     );
     expect(mockEncodeFunctionData).toHaveBeenCalledTimes(2);
     expect(mockEncodeFunctionData).toHaveBeenCalledWith(
@@ -101,6 +103,7 @@ describe('swapV3', () => {
       BigInt('1000000000000000'),
       300000,
       20,
+      true,
     );
 
     const callArgs = mockMulticall.mock.calls[0];
@@ -118,11 +121,33 @@ describe('swapV3', () => {
       BigInt('1000000000000000'),
       300000,
       20,
+      true,
     );
     const exactInputCall = mockEncodeFunctionData.mock.calls.find(
       (c: any[]) => c[0] === 'exactInputSingle',
     );
     expect(exactInputCall).toBeDefined();
     expect(exactInputCall![1][0].fee).toBe(2500);
+  });
+
+  it('should not encode refundETH and not pass value when sellToken is not native BNB', async () => {
+    const pool = makePool();
+    pool.sellTokenAddress = '0xUSDT';
+    await swapV3(
+      mockWallet as any,
+      pool,
+      BigInt('1000000000000000'),
+      300000,
+      20,
+      false,
+    );
+    expect(mockEncodeFunctionData).toHaveBeenCalledTimes(1);
+    expect(mockEncodeFunctionData).toHaveBeenCalledWith(
+      'exactInputSingle',
+      expect.anything(),
+    );
+    const multicallArgs = mockMulticall.mock.calls[0];
+    const txOpts = multicallArgs[2];
+    expect(txOpts.value).toBeUndefined();
   });
 });

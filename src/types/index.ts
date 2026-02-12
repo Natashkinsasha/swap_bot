@@ -35,13 +35,14 @@ export interface SelectedPool {
   pair: DexscreenerPair;
   routerAddress: string;
   version: 'v2' | 'v3' | 'v4';
-  tokenIn: string;
-  tokenOut: string;
+  sellTokenAddress: string;
+  buyTokenAddress: string;
   fee?: number;
 }
 
 export interface SwapOptions {
-  amountBnb: string;
+  sellTokenAddress?: string;
+  amountIn: string;
   slippagePercent: number;
   rpcUrl: string;
   privateKey: string;

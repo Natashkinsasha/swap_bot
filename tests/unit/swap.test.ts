@@ -61,15 +61,16 @@ function makePool(version: 'v2' | 'v3' | 'v4'): SelectedPool {
     },
     routerAddress: '0xrouter',
     version,
-    tokenIn: WBNB,
-    tokenOut: '0xCAKE',
+    sellTokenAddress: WBNB,
+    buyTokenAddress: '0xCAKE',
     fee: version === 'v3' || version === 'v4' ? 2500 : undefined,
   };
 }
 
 function makeOpts(overrides: Partial<SwapOptions> = {}): SwapOptions {
   return {
-    amountBnb: '0.001',
+    sellTokenAddress: undefined,
+    amountIn: '0.001',
     slippagePercent: 12,
     rpcUrl: 'https://bsc-dataseed1.binance.org',
     privateKey: TEST_KEY,

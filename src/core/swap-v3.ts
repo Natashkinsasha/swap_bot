@@ -1,6 +1,5 @@
 import { ethers } from 'ethers';
 import { SelectedPool } from '../types';
-import { WBNB } from '../config/constants';
 import { ROUTER_V3_ABI } from '../abi/routerV3';
 import { log } from '../utils/logger';
 
@@ -10,6 +9,7 @@ export async function swapV3(
   amountIn: bigint,
   gasLimit: number,
   deadlineMinutes: number,
+  isNative: boolean,
 ): Promise<string> {
   const walletAddress = await wallet.getAddress();
   const router = new ethers.Contract(pool.routerAddress, ROUTER_V3_ABI, wallet);
@@ -21,8 +21,8 @@ export async function swapV3(
   log.info(`Sending V3 swap transaction (fee tier: ${fee})...`);
 
   const exactInputSingleParams = {
-    tokenIn: WBNB,
-    tokenOut: pool.tokenOut,
+    tokenIn: pool.sellTokenAddress,
+    tokenOut: pool.buyTokenAddress,
     fee,
     recipient: walletAddress,
     amountIn,
@@ -34,13 +34,17 @@ export async function swapV3(
     exactInputSingleParams,
   ]);
 
-  const refundCalldata = router.interface.encodeFunctionData('refundETH', []);
+  const calldatas = [swapCalldata];
+  if (isNative) {
+    const refundCalldata = router.interface.encodeFunctionData('refundETH', []);
+    calldatas.push(refundCalldata);
+  }
 
   const tx = await router.multicall(
     deadline,
-    [swapCalldata, refundCalldata],
+    calldatas,
     {
-      value: amountIn,
+      ...(isNative ? { value: amountIn } : {}),
       gasLimit,
     },
   );

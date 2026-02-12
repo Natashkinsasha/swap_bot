@@ -25,15 +25,16 @@ describe('Dexscreener Integration', () => {
     expect(pool.pair.chainId).toBe('bsc');
     expect(pool.version).toMatch(/^v[234]$/);
     expect(pool.routerAddress).toBeDefined();
-    expect(pool.tokenOut).toBeDefined();
+    expect(pool.buyTokenAddress).toBeDefined();
     expect(pool.pair.liquidity.usd).toBeGreaterThan(0);
   });
 
-  it('should find USDT pools on BSC', async () => {
-    const pool = await findBestPool(USDT_ADDRESS);
+  it('should find CAKE pools with USDT as sellToken', async () => {
+    const pool = await findBestPool(CAKE_ADDRESS, USDT_ADDRESS);
 
     expect(pool).toBeDefined();
     expect(pool.pair.chainId).toBe('bsc');
+    expect(pool.sellTokenAddress).toBe(USDT_ADDRESS);
     expect(pool.pair.liquidity.usd).toBeGreaterThan(0);
   });
 
@@ -42,7 +43,8 @@ describe('Dexscreener Integration', () => {
     expect(pool.pair.liquidity.usd).toBeGreaterThan(1000);
   });
 
-  it('should throw for non-existent token', async () => {
-    await expect(findBestPool(FAKE_TOKEN)).rejects.toThrow();
+  it('should throw for non-existent token pair', async () => {
+    const FAKE_SELL = '0x0000000000000000000000000000000000000002';
+    await expect(findBestPool(FAKE_TOKEN, FAKE_SELL)).rejects.toThrow();
   });
 });

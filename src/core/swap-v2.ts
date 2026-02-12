@@ -1,8 +1,8 @@
 import { ethers } from 'ethers';
 import { SelectedPool } from '../types';
-import { WBNB } from '../config/constants';
 import { ROUTER_V2_ABI } from '../abi/routerV2';
 import { log } from '../utils/logger';
+
 
 export async function swapV2(
   wallet: ethers.Signer,
@@ -11,10 +11,11 @@ export async function swapV2(
   slippage: number,
   gasLimit: number,
   deadlineMinutes: number,
+  isNative: boolean,
 ): Promise<string> {
   const walletAddress = await wallet.getAddress();
   const router = new ethers.Contract(pool.routerAddress, ROUTER_V2_ABI, wallet);
-  const path = [WBNB, pool.tokenOut];
+  const path = [pool.sellTokenAddress, pool.buyTokenAddress];
   const deadline = Math.floor(Date.now() / 1000) + deadlineMinutes * 60;
 
   let amountOutMin = 0n;
@@ -31,16 +32,30 @@ export async function swapV2(
 
   log.info('Sending V2 swap transaction...');
 
-  const tx = await router.swapExactETHForTokensSupportingFeeOnTransferTokens(
-    amountOutMin,
-    path,
-    walletAddress,
-    deadline,
-    {
-      value: amountIn,
-      gasLimit,
-    },
-  );
+  let tx;
+  if (isNative) {
+    tx = await router.swapExactETHForTokensSupportingFeeOnTransferTokens(
+      amountOutMin,
+      path,
+      walletAddress,
+      deadline,
+      {
+        value: amountIn,
+        gasLimit,
+      },
+    );
+  } else {
+    tx = await router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+      amountIn,
+      amountOutMin,
+      path,
+      walletAddress,
+      deadline,
+      {
+        gasLimit,
+      },
+    );
+  }
 
   log.tx(tx.hash);
   log.info('Waiting for confirmation...');

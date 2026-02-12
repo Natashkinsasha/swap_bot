@@ -14,7 +14,8 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 const mockWait = jest.fn().mockResolvedValue({ status: 1 });
-const mockSwap = jest.fn().mockResolvedValue({ hash: '0xV2HASH', wait: mockWait });
+const mockSwapETH = jest.fn().mockResolvedValue({ hash: '0xV2HASH', wait: mockWait });
+const mockSwapTokens = jest.fn().mockResolvedValue({ hash: '0xV2HASH_TOKEN', wait: mockWait });
 const mockGetAmountsOut = jest.fn().mockResolvedValue([
   BigInt('1000000000000000'),
   BigInt('500000000000000000'),
@@ -27,7 +28,8 @@ jest.mock('ethers', () => {
     ethers: {
       ...actual.ethers,
       Contract: jest.fn().mockImplementation(() => ({
-        swapExactETHForTokensSupportingFeeOnTransferTokens: mockSwap,
+        swapExactETHForTokensSupportingFeeOnTransferTokens: mockSwapETH,
+        swapExactTokensForTokensSupportingFeeOnTransferTokens: mockSwapTokens,
         getAmountsOut: mockGetAmountsOut,
       })),
     },
@@ -51,8 +53,8 @@ function makePool(): SelectedPool {
     },
     routerAddress: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
     version: 'v2',
-    tokenIn: WBNB,
-    tokenOut: '0xCAKE',
+    sellTokenAddress: WBNB,
+    buyTokenAddress: '0xCAKE',
   };
 }
 
@@ -71,9 +73,10 @@ describe('swapV2', () => {
       12,
       300000,
       20,
+      true,
     );
     expect(hash).toBe('0xV2HASH');
-    expect(mockSwap).toHaveBeenCalledTimes(1);
+    expect(mockSwapETH).toHaveBeenCalledTimes(1);
     expect(mockWait).toHaveBeenCalledTimes(1);
   });
 
@@ -85,6 +88,7 @@ describe('swapV2', () => {
       12,
       300000,
       20,
+      true,
     );
     expect(mockGetAmountsOut).toHaveBeenCalledWith(
       BigInt('1000000000000000'),
@@ -101,9 +105,10 @@ describe('swapV2', () => {
       12,
       300000,
       20,
+      true,
     );
 
-    const callArgs = mockSwap.mock.calls[0];
+    const callArgs = mockSwapETH.mock.calls[0];
     const deadline = callArgs[3];
     expect(deadline).toBeGreaterThanOrEqual(before + 20 * 60);
     expect(deadline).toBeLessThanOrEqual(before + 20 * 60 + 5);
@@ -118,8 +123,26 @@ describe('swapV2', () => {
       12,
       300000,
       20,
+      true,
     );
-    const callArgs = mockSwap.mock.calls[0];
+    const callArgs = mockSwapETH.mock.calls[0];
     expect(callArgs[0]).toBe(BigInt(0));
+  });
+
+  it('should call swapExactTokensForTokens when sellToken is not native BNB', async () => {
+    const pool = makePool();
+    pool.sellTokenAddress = '0xUSDT';
+    const hash = await swapV2(
+      mockWallet as any,
+      pool,
+      BigInt('1000000000000000'),
+      12,
+      300000,
+      20,
+      false,
+    );
+    expect(hash).toBe('0xV2HASH_TOKEN');
+    expect(mockSwapTokens).toHaveBeenCalledTimes(1);
+    expect(mockSwapETH).not.toHaveBeenCalled();
   });
 });

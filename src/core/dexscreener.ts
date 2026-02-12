@@ -5,30 +5,27 @@ import { log } from '../utils/logger';
 
 const DEXSCREENER_API = 'https://api.dexscreener.com/latest/dex/tokens';
 
-export async function findBestPool(tokenAddress: string): Promise<SelectedPool> {
-  log.info(`Fetching pools from Dexscreener for token: ${tokenAddress}`);
+export async function findBestPool(buyTokenAddress: string, sellTokenAddress?: string): Promise<SelectedPool> {
+  const resolvedSell = sellTokenAddress ?? WBNB;
 
-  const { data } = await axios.get<DexscreenerResponse>(
-    `${DEXSCREENER_API}/${tokenAddress}`,
-  );
+  log.info(`Fetching pools from Dexscreener for both tokens...`);
+  const [buyPairs, sellPairs] = await Promise.all([
+    fetchBscPairs(buyTokenAddress),
+    fetchBscPairs(resolvedSell),
+  ]);
 
-  if (!data.pairs || data.pairs.length === 0) {
-    throw new Error('No pools found on Dexscreener for this token');
-  }
+  const seen = new Set(buyPairs.map((p) => p.pairAddress));
+  const allPairs = [...buyPairs, ...sellPairs.filter((p) => !seen.has(p.pairAddress))];
+  log.info(`Found ${allPairs.length} unique BSC pool(s)`);
 
-  const bscPairs = data.pairs.filter((p) => p.chainId === 'bsc');
-  if (bscPairs.length === 0) {
-    throw new Error('No BSC pools found for this token');
-  }
-
-  log.info(`Found ${bscPairs.length} BSC pool(s) total`);
-
-  const supportedPairs = bscPairs.filter((p) => {
-    const dexLower = p.dexId.toLowerCase();
-    return SUPPORTED_DEX_IDS.some((id) => dexLower.includes(id.replace('pancakeswap ', '')));
-  });
-
-  const v2v3v4Pairs = filterByVersion(supportedPairs.length > 0 ? supportedPairs : bscPairs);
+  const buyLower = buyTokenAddress.toLowerCase();
+  const v2v3v4Pairs = findSupported(allPairs, resolvedSell)
+    .filter((p) => {
+      const base = p.pair.baseToken.address.toLowerCase();
+      const quote = p.pair.quoteToken.address.toLowerCase();
+      return base === buyLower || quote === buyLower;
+    })
+    .sort((a, b) => (b.pair.liquidity?.usd ?? 0) - (a.pair.liquidity?.usd ?? 0));
 
   if (v2v3v4Pairs.length === 0) {
     throw new Error('No supported V2/V3/V4 pools found on BSC');
@@ -36,11 +33,7 @@ export async function findBestPool(tokenAddress: string): Promise<SelectedPool> 
 
   logPools(v2v3v4Pairs);
 
-  const best = v2v3v4Pairs.sort((a, b) => {
-    const liqA = a.pair.liquidity?.usd ?? 0;
-    const liqB = b.pair.liquidity?.usd ?? 0;
-    return liqB - liqA;
-  })[0];
+  const best = v2v3v4Pairs[0];
 
   log.success(
     `Selected pool: ${best.pair.baseToken.symbol}/${best.pair.quoteToken.symbol} ` +
@@ -50,8 +43,26 @@ export async function findBestPool(tokenAddress: string): Promise<SelectedPool> 
   return best;
 }
 
-function filterByVersion(pairs: DexscreenerPair[]): SelectedPool[] {
+async function fetchBscPairs(tokenAddress: string): Promise<DexscreenerPair[]> {
+  const { data } = await axios.get<DexscreenerResponse>(
+    `${DEXSCREENER_API}/${tokenAddress}`,
+  );
+  if (!data.pairs) return [];
+  return data.pairs.filter((p) => p.chainId === 'bsc');
+}
+
+function findSupported(bscPairs: DexscreenerPair[], sellTokenAddress: string): SelectedPool[] {
+  const supportedPairs = bscPairs.filter((p) => {
+    const dexLower = p.dexId.toLowerCase();
+    return SUPPORTED_DEX_IDS.some((id) => dexLower.includes(id.replace('pancakeswap ', '')));
+  });
+  return filterByVersion(supportedPairs.length > 0 ? supportedPairs : bscPairs, sellTokenAddress);
+}
+
+function filterByVersion(pairs: DexscreenerPair[], sellTokenAddress?: string): SelectedPool[] {
   const result: SelectedPool[] = [];
+  const resolvedSellToken = sellTokenAddress ?? WBNB;
+  const sellLower = resolvedSellToken.toLowerCase();
 
   for (const pair of pairs) {
     const dex = pair.dexId.toLowerCase();
@@ -73,17 +84,24 @@ function filterByVersion(pairs: DexscreenerPair[]): SelectedPool[] {
     const router = ROUTERS[routerKey];
     if (!router) continue;
 
-    const isBaseToken =
-      pair.baseToken.address.toLowerCase() === WBNB.toLowerCase();
+    const baseLower = pair.baseToken.address.toLowerCase();
+    const quoteLower = pair.quoteToken.address.toLowerCase();
+
+    let buyTokenAddress: string;
+    if (baseLower === sellLower) {
+      buyTokenAddress = pair.quoteToken.address;
+    } else if (quoteLower === sellLower) {
+      buyTokenAddress = pair.baseToken.address;
+    } else {
+      continue;
+    }
 
     result.push({
       pair,
       routerAddress: router.address,
       version,
-      tokenIn: WBNB,
-      tokenOut: isBaseToken
-        ? pair.quoteToken.address
-        : pair.baseToken.address,
+      sellTokenAddress: resolvedSellToken,
+      buyTokenAddress,
       fee: version === 'v3' || version === 'v4' ? 2500 : undefined,
     });
   }

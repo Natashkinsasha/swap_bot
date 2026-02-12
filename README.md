@@ -11,30 +11,37 @@ npm install
 # 2. Скопировать и заполнить .env
 cp .env.example .env
 
-# 3. Купить токен
-npx ts-node src/index.ts -t <TOKEN_ADDRESS> -a <AMOUNT_BNB>
+# 3. Купить токен за BNB
+npx ts-node src/index.ts -b <TOKEN_ADDRESS> -a <AMOUNT_BNB>
+
+# 3b. Купить токен за USDT (или любой другой ERC-20)
+npx ts-node src/index.ts -b <TOKEN_ADDRESS> -a <AMOUNT> -s <SELL_TOKEN_ADDRESS>
 ```
 
 ## Запуск
 
 ```bash
-npx ts-node src/index.ts -t <TOKEN_ADDRESS> -a <AMOUNT_BNB> [-s <SLIPPAGE>]
+npx ts-node src/index.ts -b <BUY_TOKEN> -a <AMOUNT> [-s <SELL_TOKEN>] [-l <SLIPPAGE>]
 ```
 
 | Флаг | Описание | Обязательный |
 |---|---|---|
-| `-t, --token <address>` | Адрес токена для покупки | ✅ |
-| `-a, --amount <bnb>` | Сколько BNB потратить | ✅ |
-| `-s, --slippage <percent>` | Slippage (%), по умолчанию `12` | нет |
+| `-b, --buy <address>` | Адрес токена для покупки | ✅ |
+| `-a, --amount <value>` | Сколько потратить | ✅ |
+| `-s, --sell <address>` | Адрес ERC-20 токена для продажи (по умолчанию нативный BNB) | нет |
+| `-l, --slippage <percent>` | Slippage (%), по умолчанию `12` | нет |
 
 ### Примеры
 
 ```bash
 # Купить CAKE на 0.01 BNB
-npx ts-node src/index.ts -t 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82 -a 0.01
+npx ts-node src/index.ts -b 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82 -a 0.01
+
+# Купить CAKE на 10 USDT
+npx ts-node src/index.ts -b 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82 -a 10 -s 0x55d398326f99059fF775485246999027B3197955
 
 # Купить USDT на 0.5 BNB со slippage 5%
-npx ts-node src/index.ts -t 0x55d398326f99059fF775485246999027B3197955 -a 0.5 -s 5
+npx ts-node src/index.ts -b 0x55d398326f99059fF775485246999027B3197955 -a 0.5 -l 5
 
 # Показать справку
 npx ts-node src/index.ts --help
@@ -56,21 +63,31 @@ npx ts-node src/index.ts --help
 
 ## Что делает бот
 
-1. Принимает адрес токена и сумму через CLI
-2. Запрашивает пулы через Dexscreener API (только BSC)
-3. Фильтрует по PancakeSwap V2/V3/V4
-4. Выбирает пул с максимальной ликвидностью
-5. Выполняет swap BNB → Token
+1. Принимает адрес buy/sell токенов и сумму через CLI
+2. Параллельно ищет пулы через Dexscreener API по обоим токенам (только BSC)
+3. Фильтрует по PancakeSwap V2/V3/V4, оставляет только пары содержащие оба токена
+4. Сортирует по ликвидности и выбирает лучший пул
+5. Выполняет swap (BNB → Token или Token → Token)
 6. Логирует весь процесс в консоль и в файл `swap-bot.log`
+
+> **Как ищутся пулы:** Dexscreener API возвращает максимум 30 пулов на один токен, отсортированных по ликвидности.
+> Для популярных токенов (например USDT) топ-30 могут не содержать нужную пару — например, все 30 пулов USDT будут USDT/USDC.
+> Поэтому бот делает **два параллельных запроса** — по buy-токену и по sell-токену — и объединяет результаты с дедупликацией.
+> Это гарантирует, что пара вроде WBNB/USDT будет найдена даже если она не попадает в топ-30 ни одного из токенов по отдельности.
 
 ## Пример вывода
 
 ```
-[12:34:56] info: Token address: 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82
+[12:34:56] info: Buy token: 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82
+[12:34:56] info: Sell token: BNB (native)
 [12:34:56] info: Amount: 0.01 BNB | Slippage: 12%
 ---
-[12:34:57] info: Found 12 BSC pool(s) total
-[12:34:57] info: ✅ Selected pool: Cake/WBNB on pancakeswap_v2 (v2) — liquidity: $13,823,344
+[12:34:57] info: Fetching pools from Dexscreener for both tokens...
+[12:34:57] info: Found 42 unique BSC pool(s)
+[12:34:57] info: Supported pools:
+  • Cake/WBNB [V2] liq: $13,823,344 — 0x...
+  • Cake/WBNB [V3] liq: $5,123,456 — 0x...
+[12:34:57] info: ✅ Selected pool: Cake/WBNB on pancakeswap (v2) — liquidity: $13,823,344
 ---
 [12:34:57] info: Wallet: 0xYourAddress...
 [12:34:57] info: Swapping 0.01 BNB → Cake (V2)
@@ -99,7 +116,7 @@ src/
   index.ts              — CLI (commander)
   config/
     env.ts              — переменные из .env
-    constants.ts        — WBNB, роутеры PancakeSwap
+    constants.ts        — WBNB (internal), роутеры PancakeSwap
   core/
     dexscreener.ts      — поиск пулов через API
     swap.ts             — оркестратор swap

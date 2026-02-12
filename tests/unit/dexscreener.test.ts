@@ -16,6 +16,7 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+const CAKE = '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82';
 
 function makePair(overrides: Partial<DexscreenerPair> = {}): DexscreenerPair {
   return {
@@ -46,16 +47,16 @@ function makePair(overrides: Partial<DexscreenerPair> = {}): DexscreenerPair {
 describe('findBestPool', () => {
   afterEach(() => jest.clearAllMocks());
 
-  it('should throw if no pairs returned', async () => {
+  it('should throw if no pairs returned from both searches', async () => {
     mockedAxios.get.mockResolvedValue({ data: { pairs: null } });
-    await expect(findBestPool('0xtoken')).rejects.toThrow('No pools found on Dexscreener');
+    await expect(findBestPool('0xFAKE')).rejects.toThrow('No supported V2/V3/V4 pools found on BSC');
   });
 
-  it('should throw if no BSC pairs', async () => {
+  it('should throw if no BSC pairs from both searches', async () => {
     mockedAxios.get.mockResolvedValue({
       data: { pairs: [makePair({ chainId: 'ethereum' })] },
     });
-    await expect(findBestPool('0xtoken')).rejects.toThrow('No BSC pools found');
+    await expect(findBestPool('0xFAKE')).rejects.toThrow('No supported V2/V3/V4 pools found on BSC');
   });
 
   it('should select pool with highest liquidity', async () => {
@@ -72,7 +73,7 @@ describe('findBestPool', () => {
       data: { pairs: [lowLiq, highLiq] },
     });
 
-    const result = await findBestPool('0xtoken');
+    const result = await findBestPool(CAKE);
     expect(result.pair.pairAddress).toBe('0xhigh');
   });
 
@@ -80,7 +81,7 @@ describe('findBestPool', () => {
     const v3Pair = makePair({ dexId: 'pancakeswap_v3', labels: ['v3'] });
     mockedAxios.get.mockResolvedValue({ data: { pairs: [v3Pair] } });
 
-    const result = await findBestPool('0xtoken');
+    const result = await findBestPool(CAKE);
     expect(result.version).toBe('v3');
     expect(result.fee).toBe(2500);
   });
@@ -89,7 +90,7 @@ describe('findBestPool', () => {
     const v4Pair = makePair({ dexId: 'pancakeswap', labels: ['v4'] });
     mockedAxios.get.mockResolvedValue({ data: { pairs: [v4Pair] } });
 
-    const result = await findBestPool('0xtoken');
+    const result = await findBestPool(CAKE);
     expect(result.version).toBe('v4');
     expect(result.fee).toBe(2500);
   });
@@ -98,31 +99,44 @@ describe('findBestPool', () => {
     const unknownPair = makePair({ dexId: 'pancakeswap', labels: [] });
     mockedAxios.get.mockResolvedValue({ data: { pairs: [unknownPair] } });
 
-    const result = await findBestPool('0xtoken');
+    const result = await findBestPool(CAKE);
     expect(result.version).toBe('v2');
     expect(result.fee).toBeUndefined();
   });
 
-  it('should set tokenOut to baseToken when quoteToken is WBNB', async () => {
+  it('should set buyToken to baseToken when quoteToken is WBNB', async () => {
     const pair = makePair({
       baseToken: { address: '0xCAKE', name: 'CAKE', symbol: 'CAKE' },
       quoteToken: { address: WBNB, name: 'WBNB', symbol: 'WBNB' },
     });
     mockedAxios.get.mockResolvedValue({ data: { pairs: [pair] } });
 
-    const result = await findBestPool('0xtoken');
-    expect(result.tokenOut).toBe('0xCAKE');
-    expect(result.tokenIn).toBe(WBNB);
+    const result = await findBestPool('0xCAKE');
+    expect(result.buyTokenAddress).toBe('0xCAKE');
+    expect(result.sellTokenAddress).toBe(WBNB);
   });
 
-  it('should set tokenOut to quoteToken when baseToken is WBNB', async () => {
+  it('should set buyToken to quoteToken when baseToken is WBNB', async () => {
     const pair = makePair({
       baseToken: { address: WBNB, name: 'WBNB', symbol: 'WBNB' },
       quoteToken: { address: '0xUSDT', name: 'USDT', symbol: 'USDT' },
     });
     mockedAxios.get.mockResolvedValue({ data: { pairs: [pair] } });
 
-    const result = await findBestPool('0xtoken');
-    expect(result.tokenOut).toBe('0xUSDT');
+    const result = await findBestPool('0xUSDT');
+    expect(result.buyTokenAddress).toBe('0xUSDT');
+  });
+
+  it('should use custom sellToken when provided', async () => {
+    const USDT = '0x55d398326f99059fF775485246999027B3197955';
+    const pair = makePair({
+      baseToken: { address: '0xCAKE', name: 'CAKE', symbol: 'CAKE' },
+      quoteToken: { address: USDT, name: 'USDT', symbol: 'USDT' },
+    });
+    mockedAxios.get.mockResolvedValue({ data: { pairs: [pair] } });
+
+    const result = await findBestPool('0xCAKE', USDT);
+    expect(result.sellTokenAddress).toBe(USDT);
+    expect(result.buyTokenAddress).toBe('0xCAKE');
   });
 });
